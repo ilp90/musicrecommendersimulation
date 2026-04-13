@@ -98,8 +98,17 @@ def load_songs(csv_path: str) -> List[Dict]:
     return songs
 
 
-def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
-    """Scores a single song against user preferences; returns (score, reasons)."""
+def score_song(user_prefs: Dict, song: Dict, weights: Optional[Dict] = None) -> Tuple[float, List[str]]:
+    """Scores a single song against user preferences; returns (score, reasons).
+
+    weights overrides the default point values for each feature, enabling
+    experiments without modifying the core logic. Keys: genre, mood, energy, acoustic.
+    """
+    w_genre   = weights["genre"]   if weights else 3.0
+    w_mood    = weights["mood"]    if weights else 2.0
+    w_energy  = weights["energy"]  if weights else 1.5
+    w_acoustic = weights["acoustic"] if weights else 0.7
+
     user_genre = user_prefs.get("genre", "")
     user_mood = user_prefs.get("mood", "")
     user_energy = float(user_prefs.get("energy", 0.5))
@@ -109,27 +118,29 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
     reasons = []
 
     if song["genre"] == user_genre:
-        score += 3.0
-        reasons.append(f"genre match (+3.0)")
+        score += w_genre
+        reasons.append(f"genre match (+{w_genre})")
 
     if song["mood"] == user_mood:
-        score += 2.0
-        reasons.append(f"mood match (+2.0)")
+        score += w_mood
+        reasons.append(f"mood match (+{w_mood})")
 
     energy_proximity = 1.0 - abs(song["energy"] - user_energy)
-    energy_points = round(1.5 * energy_proximity, 2)
+    energy_points = round(w_energy * energy_proximity, 2)
     score += energy_points
     reasons.append(f"energy proximity (+{energy_points})")
 
     acoustic_fit = song["acousticness"] if user_likes_acoustic else (1.0 - song["acousticness"])
-    acoustic_points = round(0.7 * acoustic_fit, 2)
+    acoustic_points = round(w_acoustic * acoustic_fit, 2)
     score += acoustic_points
     reasons.append(f"acoustic fit (+{acoustic_points})")
 
     return round(score, 2), reasons
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, List[str]]]:
+
+def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5,
+                    weights: Optional[Dict] = None) -> List[Tuple[Dict, float, List[str]]]:
     """Ranks all songs using score_song() and returns the top k as (song, score, reasons)."""
-    scored = [(song, *score_song(user_prefs, song)) for song in songs]
+    scored = [(song, *score_song(user_prefs, song, weights)) for song in songs]
     ranked = sorted(scored, key=lambda x: x[1], reverse=True)
     return ranked[:k]
