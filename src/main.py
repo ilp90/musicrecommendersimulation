@@ -1,12 +1,5 @@
 """
 Command line runner for the Music Recommender Simulation.
-
-This file helps you quickly run and test your recommender.
-
-You will implement the functions in recommender.py:
-- load_songs
-- score_song
-- recommend_songs
 """
 
 import os
@@ -16,20 +9,22 @@ from src.recommender import load_songs, recommend_songs
 def main() -> None:
     csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "songs.csv")
     songs = load_songs(csv_path)
+    print(f"Loaded songs: {len(songs)}\n")
 
-    # Starter example profile
-    user_prefs = {"genre": "pop", "mood": "happy", "energy": 0.8}
+    user_prefs = {"genre": "pop", "mood": "happy", "energy": 0.8, "likes_acoustic": False}
+
+    print(f"User profile: genre={user_prefs['genre']}, mood={user_prefs['mood']}, "
+          f"energy={user_prefs['energy']}, likes_acoustic={user_prefs['likes_acoustic']}")
+    print("=" * 52)
+    print(f"{'#':<3} {'Title':<26} {'Score':>5}  Reasons")
+    print("-" * 52)
 
     recommendations = recommend_songs(user_prefs, songs, k=5)
+    for rank, (song, score, reasons) in enumerate(recommendations, start=1):
+        reasons_str = ", ".join(reasons)
+        print(f"{rank:<3} {song['title']:<26} {score:>5.2f}  {reasons_str}")
 
-    print("\nTop recommendations:\n")
-    for rec in recommendations:
-        # You decide the structure of each returned item.
-        # A common pattern is: (song, score, explanation)
-        song, score, explanation = rec
-        print(f"{song['title']} - Score: {score:.2f}")
-        print(f"Because: {explanation}")
-        print()
+    print("=" * 52)
 
 
 if __name__ == "__main__":
