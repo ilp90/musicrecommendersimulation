@@ -11,23 +11,124 @@ Your goal is to:
 - Evaluate what your system gets right and wrong
 - Reflect on how this mirrors real world AI recommenders
 
-Replace this paragraph with your own summary of what your version does.
+This simulation builds a content-based music recommender that scores every song in an 18-song catalog against a user's stated taste profile and returns the top matches. It models three of the same signals real platforms use — genre identity, mood alignment, and energy proximity — in a transparent, single-function scoring rule with explicit weights. The goal is to make the recommendation logic fully inspectable: every score can be broken down into its components and explained in plain language.
 
 ---
 
 ## How The System Works
 
-Explain your design in plain language.
+Real-world recommenders like Spotify combine two strategies: collaborative filtering (finding users with similar taste and borrowing their history) and content-based filtering (matching the audio features of songs you already liked). This simulation focuses on **content-based filtering** — it scores every song in the catalog against a user's stated preferences and surfaces the closest matches. Rather than learning from many users' behavior, it relies entirely on what we know about the song itself: its genre, mood, and measured audio properties. The system prioritizes **vibe alignment** — matching the emotional energy and texture of what a user is looking for — over novelty or diversity.
 
-Some prompts to answer:
+### Features used by each `Song`
 
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
+| Feature | Type | Role |
+|---|---|---|
+| `genre` | string | Categorical match — strongest filter |
+| `mood` | string | Categorical match — emotional intent |
+| `energy` | float (0–1) | Proximity score — intensity alignment |
+| `valence` | float (0–1) | Proximity score — happy vs. melancholy |
+| `danceability` | float (0–1) | Proximity score — rhythmic feel |
+| `acousticness` | float (0–1) | Proximity score — organic vs. electronic texture |
+| `tempo_bpm` | float | Available in data; not yet weighted in v1 |
 
-You can include a simple diagram or bullet list if helpful.
+### Information stored in `UserProfile`
+
+- `favorite_genre` — used for categorical genre matching
+- `favorite_mood` — used for categorical mood matching
+- `target_energy` — the energy level the user wants right now
+- `likes_acoustic` — boolean preference for organic vs. produced sound
+
+### How a score is computed
+
+Each song receives a weighted score:
+
+```
+score = 3.0 × genre_match
+      + 2.0 × mood_match
+      + 1.5 × (1 - |song.energy - user.target_energy|)
+      + 1.0 × (1 - |song.valence - user.target_valence|)
+      + 0.7 × acousticness_score
+```
+
+Categorical features return `1.0` on match, `0.0` otherwise. Numerical features use a proximity formula so songs *closer* to the user's preference score higher — not just songs with higher raw values.
+
+### How songs are chosen
+
+The scoring rule is applied to every song in the catalog independently. The ranking rule then sorts all songs by score (descending) and returns the top `k`. The two steps are kept separate so the scoring logic can be tested and adjusted without changing how the final list is assembled.
+
+---
+
+## Algorithm Recipe (Finalized)
+
+### Weights and Rationale
+
+| Feature | Weight | Type | Why this weight |
+|---|---|---|---|
+| `genre` | **3.0** | categorical (0 or 1) | Strongest signal — genre defines the entire sonic universe; rock and lofi are incompatible regardless of mood |
+| `mood` | **2.0** | categorical (0 or 1) | Second strongest — sets emotional intent; "chill" and "intense" require different contexts |
+| `energy` | **1.5** | proximity `1 - \|Δ\|` | High variance in the dataset (0.18–0.97); close match matters for workout vs. study |
+| `acousticness` | **0.7** | proximity or boolean | Captures organic vs. electronic texture, a dimension energy alone misses |
+
+**Full formula:**
+```
+score = 3.0 × genre_match
+      + 2.0 × mood_match
+      + 1.5 × (1 − |song.energy − user.target_energy|)
+      + 0.7 × (song.acousticness  if likes_acoustic  else  1 − song.acousticness)
+```
+
+### Example User Profiles
+
+**"Late Night Focus"**
+```python
+UserProfile(favorite_genre="lofi", favorite_mood="focused",
+            target_energy=0.40, likes_acoustic=True)
+```
+Expected top songs: Focus Flow (9), Library Rain (4), Midnight Coding (2) — all lofi/chill/low-energy.
+This profile clearly separates "intense rock" (Storm Runner scores ≈ 1.7) from "chill lofi" (Focus Flow scores ≈ 7.1) because genre mismatch alone costs 3.0 points and energy gap adds another ~0.75 penalty.
+
+**"Morning Run"**
+```python
+UserProfile(favorite_genre="edm", favorite_mood="euphoric",
+            target_energy=0.95, likes_acoustic=False)
+```
+Expected top songs: Signal Peak (17), Gym Hero (5), City Heights (11).
+
+**Critique of the profile shape:** A profile with one `favorite_genre` and one `favorite_mood` is intentionally narrow. It cannot express "I'm ok with hip-hop *or* edm" or "any high-energy genre works." For a real system, this would be replaced by a taste vector learned from listening history. For this simulation, the narrowness is a feature — it makes the scoring logic easy to trace and verify.
+
+---
+
+## Data Flow
+
+```mermaid
+flowchart TD
+    A["🧑 User Profile\nfavorite_genre · favorite_mood\ntarget_energy · likes_acoustic"]
+    B["📄 songs.csv\n18 songs · 9 features each"]
+    C["For each song in catalog"]
+    D["Compute score\n3.0 × genre_match\n+ 2.0 × mood_match\n+ 1.5 × energy_proximity\n+ 0.7 × acoustic_fit"]
+    E["Attach (song, score, explanation)"]
+    F{"More songs?"}
+    G["Sort all songs by score ↓"]
+    H["Return top k songs\nwith explanations"]
+
+    A --> C
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F -- Yes --> C
+    F -- No --> G
+    G --> H
+```
+
+---
+
+## Expected Biases
+
+- **Genre dominance:** A genre weight of 3.0 means a perfect genre match always beats any non-matching song, even if the non-matching song is a near-perfect fit on every other dimension. A great ambient track will never surface for a lofi user.
+- **Mood rigidity:** The binary mood match (1.0 or 0.0) treats "relaxed" and "chill" as completely different, even though a human listener might find them interchangeable.
+- **Catalog skew:** With only 18 songs, some genres appear once. A reggae user will always get Harbour Sun at the top regardless of whether it truly fits — there's no alternative.
+- **No novelty:** The system always recommends the closest match. It will never suggest a surprising discovery that happens to work, the way Spotify's Discover Weekly intentionally does.
 
 ---
 
