@@ -99,42 +99,37 @@ def load_songs(csv_path: str) -> List[Dict]:
 
 
 def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
-    """
-    Scores a single song against user preferences.
-    Required by recommend_songs() and src/main.py
-    """
-    # TODO: Implement scoring logic using your Algorithm Recipe from Phase 2.
-    # Expected return format: (score, reasons)
-    return []
-
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
-    """
-    Functional implementation of the recommendation logic.
-    Required by src/main.py
-    """
+    """Scores a single song against user preferences; returns (score, reasons)."""
     user_genre = user_prefs.get("genre", "")
     user_mood = user_prefs.get("mood", "")
     user_energy = float(user_prefs.get("energy", 0.5))
     user_likes_acoustic = user_prefs.get("likes_acoustic", False)
 
-    def score(song: Dict) -> float:
-        genre_match = 1.0 if song["genre"] == user_genre else 0.0
-        mood_match = 1.0 if song["mood"] == user_mood else 0.0
-        energy_score = 1.0 - abs(song["energy"] - user_energy)
-        acoustic_score = song["acousticness"] if user_likes_acoustic else (1.0 - song["acousticness"])
-        return 3.0 * genre_match + 2.0 * mood_match + 1.5 * energy_score + 0.7 * acoustic_score
+    score = 0.0
+    reasons = []
 
-    def explain(song: Dict) -> str:
-        reasons = []
-        if song["genre"] == user_genre:
-            reasons.append(f"genre matches ({song['genre']})")
-        if song["mood"] == user_mood:
-            reasons.append(f"mood matches ({song['mood']})")
-        if abs(song["energy"] - user_energy) < 0.15:
-            reasons.append(f"energy is close to your target ({song['energy']:.2f})")
-        if not reasons:
-            return "Closest available match"
-        return "Recommended because: " + ", ".join(reasons)
+    if song["genre"] == user_genre:
+        score += 3.0
+        reasons.append(f"genre match (+3.0)")
 
-    ranked = sorted(songs, key=score, reverse=True)[:k]
-    return [(song, score(song), explain(song)) for song in ranked]
+    if song["mood"] == user_mood:
+        score += 2.0
+        reasons.append(f"mood match (+2.0)")
+
+    energy_proximity = 1.0 - abs(song["energy"] - user_energy)
+    energy_points = round(1.5 * energy_proximity, 2)
+    score += energy_points
+    reasons.append(f"energy proximity (+{energy_points})")
+
+    acoustic_fit = song["acousticness"] if user_likes_acoustic else (1.0 - song["acousticness"])
+    acoustic_points = round(0.7 * acoustic_fit, 2)
+    score += acoustic_points
+    reasons.append(f"acoustic fit (+{acoustic_points})")
+
+    return round(score, 2), reasons
+
+def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, List[str]]]:
+    """Ranks all songs using score_song() and returns the top k as (song, score, reasons)."""
+    scored = [(song, *score_song(user_prefs, song)) for song in songs]
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)
+    return ranked[:k]
